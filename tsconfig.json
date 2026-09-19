@@ -1,5 +1,6 @@
 {
   "compilerOptions": {
+    "baseUrl": ".",
     "target": "ES2017",
     "lib": [
       "dom",
@@ -42,6 +43,10 @@
   "exclude": [
     "node_modules",
     "examples",
+    "build",
+    "components",
+    "hooks",
+    "lib/utils.ts",
     "db",
     "vite.config.ts",
     "drizzle.config.ts",
