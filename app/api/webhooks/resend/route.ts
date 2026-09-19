@@ -2,6 +2,21 @@ import { NextRequest, NextResponse } from "next/server";
 import { getResend, inboundDomain } from "@/lib/resend";
 import { getSupabaseAdmin } from "@/lib/supabase-admin";
 
+function headerValue(headers: unknown, name: string) {
+  if (!headers || typeof headers !== "object") return null;
+  const entries = Object.entries(headers as Record<string, unknown>);
+  const value = entries.find(([key]) => key.toLowerCase() === name.toLowerCase())?.[1];
+  return typeof value === "string" ? value : null;
+}
+
+function cleanReply(text: string | null | undefined) {
+  if (!text) return null;
+  return text
+    .split(/\r?\n(?=(?:On [\s\S]+wrote:|في [\s\S]+ كتب:|[-_]{2,}\s*(?:Original Message|الرسالة الأصلية)))/i)[0]
+    .split(/\r?\n\s*>/)[0]
+    .trim();
+}
+
 export async function POST(request: NextRequest) {
   const raw = await request.text();
   try {
@@ -44,17 +59,20 @@ export async function POST(request: NextRequest) {
       if (created.error) throw created.error;
       conversationId = created.data.id;
     }
+    const messageId = headerValue(email.headers, "message-id");
+    const inReplyTo = headerValue(email.headers, "in-reply-to");
     const inserted = await db.from("messages").insert({
       company_id: company.id, conversation_id: conversationId, direction: "inbound", sender_type: "customer",
       from_email: from.toLowerCase(), to_emails: recipients, cc_emails: email.cc || [], subject: email.subject || null,
-      text_body: email.text || null, html_body: email.html || null, provider_message_id: event.data.email_id,
+      text_body: cleanReply(email.text), html_body: email.html || null, provider_message_id: event.data.email_id,
+      internet_message_id: messageId, in_reply_to: inReplyTo,
       attachments: email.attachments || [], status: "received"
     });
     if (inserted.error && inserted.error.code !== "23505") throw inserted.error;
     await db.from("conversations").update({ last_message_at: new Date().toISOString() }).eq("id", conversationId);
     return NextResponse.json({ ok: true });
   } catch (error) {
+    console.error("Resend webhook failed", error);
     return NextResponse.json({ error: error instanceof Error ? error.message : "Webhook failed" }, { status: 400 });
   }
 }
-
